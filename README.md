@@ -7,6 +7,9 @@ A system for transcribing audio, detecting claims, and fact-checking them in rea
 - **Audio Transcription**: Transcribe audio files using Deepgram's API
 - **Multiple Audio Formats**: Support for MP3, WAV, WebM, PCM and other formats
 - **API Server**: HTTP endpoints for transcribing files and WebSocket for real-time streaming
+- **Claim Detection**: AI-powered identification of factual claims in transcripts
+- **Fact Checking**: Verification of claims using a RAG architecture with LangChain and LangGraph
+- **Knowledge Repository**: Vector database for storing and retrieving factual information
 - **Local Mode**: Run transcription on local files without starting a server
 - **Modular Architecture**: Hexagonal architecture for clean separation of concerns
 - **Real-time Streaming**: WebSocket integration for live audio transcription
@@ -28,10 +31,33 @@ pip install -r requirements.txt
 ```bash
 # Create a .env file in the project root (not in the truth_checker directory)
 echo "DEEPGRAM_API_KEY=your_deepgram_api_key_here" > .env
-# Replace with your actual Deepgram API key
+# If using the fact checking features, add LLM provider API keys
+echo "ANTHROPIC_API_KEY=your_anthropic_api_key_here" >> .env
+# Or use OpenAI
+echo "OPENAI_API_KEY=your_openai_api_key_here" >> .env
 ```
 
 ## Usage
+
+### Running the Fact Checking Demo
+
+To test the fact checking capabilities without audio transcription:
+
+```bash
+python examples/fact_checking_demo.py
+```
+
+You can also provide your own text to analyze:
+
+```bash
+python examples/fact_checking_demo.py --text "The Earth is 6000 years old. Climate change is primarily caused by human activities."
+```
+
+Or specify an LLM provider:
+
+```bash
+python examples/fact_checking_demo.py --llm openai
+```
 
 ### Running in Local Mode
 
@@ -41,66 +67,35 @@ Process an audio file directly:
 python -m truth_checker --local --file path/to/audio.mp3
 ```
 
-### Running as a Server
+### Running the API Server
 
-Start the server:
+Start the API server to accept HTTP requests and WebSocket connections:
 
 ```bash
 python -m truth_checker --server
 ```
 
-This will start a FastAPI server on http://localhost:8000 with the following endpoints:
+#### API Endpoints
 
-- `GET /`: API information
-- `POST /api/transcribe`: Upload an audio file for transcription
-- `WebSocket /api/stream`: Stream audio in real-time for transcription
+- **Transcription**:
+  - `POST /api/transcribe`: Transcribe an uploaded audio file
+  - `WebSocket /api/stream`: Stream audio for real-time transcription
 
-### Using the Demo Script
+- **Fact Checking**:
+  - `POST /api/fact-check/claims`: Detect claims in a text transcript
+  - `POST /api/fact-check/verify`: Verify a single claim
+  - `POST /api/fact-check/analyze`: Analyze a transcript for claims and verify each one
 
-The project includes a demo script that demonstrates different ways to use the Truth Checker:
+### Mock Mode
 
-```bash
-# Direct transcription (no API server required)
-python examples/demo.py truth_checker/assets/test-audio-trump.mp3 --mode direct
-
-# HTTP API transcription (server must be running)
-python examples/demo.py truth_checker/assets/test-audio-trump.mp3 --mode http
-
-# WebSocket streaming (server must be running)
-python examples/demo.py truth_checker/assets/test-audio-trump.mp3 --mode websocket
-```
-
-### WebSocket Debug Script
-
-There's also a debug script for testing the WebSocket connection:
+For development without consuming API credits, you can use mock mode:
 
 ```bash
-python examples/deepgram_websocket_debug.py truth_checker/assets/test-audio-trump.mp3
+# Set the API key to a placeholder value
+export DEEPGRAM_API_KEY=mock_api_key
 ```
 
-## Supported Audio Formats
-
-- WAV (audio/wav, audio/x-wav)
-- MP3 (audio/mpeg, audio/mp3)
-- WebM (audio/webm)
-- PCM/raw audio (audio/pcm, audio/l16, audio/raw) with configurable parameters
-- Other formats supported by Deepgram (OGG, FLAC, AAC, etc.)
-
-## Architecture
-
-The Truth Checker follows a hexagonal architecture:
-
-- **Domain**: Core business logic and models
-- **Application**: Use cases that orchestrate domain logic
-- **Infrastructure**: External services and adapters (Deepgram, etc.)
-- **Interfaces**: API endpoints and CLI interface
-
-## Mock Mode
-
-The system supports a mock mode when no valid Deepgram API key is provided. In this mode:
-- Transcription requests return pre-defined responses
-- This is useful for development and testing without consuming Deepgram API credits
-- To use mock mode, either don't set the API key or set it to the placeholder value
+This is useful for development and testing without consuming Deepgram API credits.
 
 ## Development
 
@@ -128,9 +123,11 @@ pytest
 - ✅ HTTP and WebSocket interfaces for real-time transcription
 - ✅ Support for multiple audio formats
 - ✅ Mock mode for development without an API key
-- 🔄 Claim detection (in progress)
-- 🔄 Fact-checking integration (in progress)
-- 🔄 Knowledge base development (planned)
+- ✅ Claim detection with LLM-based classification
+- ✅ Fact-checking with RAG architecture (LangChain + LangGraph)
+- ✅ Knowledge base vectorization with ChromaDB
+- 🔄 Web-based knowledge retrieval (in progress)
+- 🔄 Fact checking UI (planned)
 
 ## License
 
@@ -141,3 +138,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Deepgram](https://deepgram.com/) for speech-to-text capabilities
 - [FastAPI](https://fastapi.tiangolo.com/) for the API server
 - [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/) for audio processing
+- [LangChain](https://python.langchain.com/) for RAG architecture
+- [LangGraph](https://langchain-ai.github.io/langgraph/) for workflow orchestration
+- [ChromaDB](https://docs.trychroma.com/) for vector storage

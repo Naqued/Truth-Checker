@@ -425,6 +425,60 @@ class DeepgramTranscriptionService(TranscriptionService):
             with open(file_path, "rb") as audio:
                 audio_data = audio.read()
                 
+            # Check file size
+            if len(audio_data) < 44:  # Minimum size for a WAV header
+                logger.error(f"Audio file too small: {len(audio_data)} bytes")
+                raise ValueError(f"Audio file too small to be valid: {len(audio_data)} bytes")
+                
+            # Validate WAV file if it appears to be one
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext == '.wav' or audio_data[:4] == b'RIFF':
+                logger.info("Validating WAV file headers")
+                try:
+                    # Check WAV header
+                    if audio_data[:4] != b'RIFF':
+                        logger.error("Missing RIFF header in WAV file")
+                        raise ValueError("Invalid WAV file: missing RIFF header")
+                        
+                    if audio_data[8:12] != b'WAVE':
+                        logger.error("Missing WAVE format marker in WAV file")
+                        raise ValueError("Invalid WAV file: missing WAVE format marker")
+                        
+                    if audio_data[12:16] != b'fmt ':
+                        logger.error("Missing fmt chunk in WAV file")
+                        raise ValueError("Invalid WAV file: missing fmt chunk")
+                        
+                    # Check for data chunk
+                    data_chunk_found = False
+                    for i in range(36, min(len(audio_data) - 4, 100)):  # Search within first 100 bytes
+                        if audio_data[i:i+4] == b'data':
+                            data_chunk_found = True
+                            break
+                            
+                    if not data_chunk_found:
+                        logger.error("Missing data chunk in WAV file")
+                        raise ValueError("Invalid WAV file: missing data chunk")
+                        
+                    # Check audio format
+                    import struct
+                    format_code = struct.unpack('<H', audio_data[20:22])[0]
+                    if format_code != 1:  # 1 is PCM
+                        logger.warning(f"WAV format is not PCM (code: {format_code})")
+                        
+                    # Check channels and sample rate for debugging
+                    channels = struct.unpack('<H', audio_data[22:24])[0]
+                    sample_rate = struct.unpack('<I', audio_data[24:28])[0]
+                    logger.info(f"WAV file info: channels={channels}, sample_rate={sample_rate}")
+                    
+                    # Quick-check for common issues
+                    if channels == 0 or sample_rate == 0:
+                        logger.error(f"Invalid WAV parameters: channels={channels}, sample_rate={sample_rate}")
+                        raise ValueError("Invalid WAV file: bad format parameters")
+                        
+                except Exception as e:
+                    logger.error(f"Error validating WAV file: {e}")
+                    # We'll still try to send it, but log the issue
+                    
             # Create source
             source = {"buffer": audio_data}
             

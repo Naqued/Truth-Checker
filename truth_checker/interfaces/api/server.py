@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from truth_checker.application.transcription_service import TranscriptionApplicationService
 from truth_checker.domain.models import Transcript
 from truth_checker.infrastructure.services.deepgram_service import DeepgramTranscriptionService
+from truth_checker.interfaces.api.fact_checking import router as fact_checking_router
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(fact_checking_router, prefix="/api")
 
 # Store active WebSocket connections
 active_connections: Dict[str, WebSocket] = {}
@@ -159,6 +163,82 @@ async def transcribe_audio(
         # Process file with Deepgram
         logger.info(f"Processing audio file: {filename} ({len(content)} bytes, type: {content_type})")
         
+        # Check for WAV file and log header information
+        if file_ext == ".wav" or content_type in {"audio/wav", "audio/x-wav"} or content[:4] == b'RIFF':
+            if len(content) < 44:
+                logger.error(f"File too small to be a valid WAV: {len(content)} bytes")
+                raise HTTPException(status_code=400, detail="File too small to be a valid WAV")
+                
+            # Log WAV file header details
+            try:
+                import struct
+                
+                # Check basic WAV structure
+                if content[:4] != b'RIFF':
+                    logger.error("Missing RIFF signature in WAV header")
+                    raise HTTPException(status_code=400, detail="Invalid WAV: Missing RIFF signature")
+                
+                if content[8:12] != b'WAVE':
+                    logger.error("Missing WAVE format in WAV header")
+                    raise HTTPException(status_code=400, detail="Invalid WAV: Missing WAVE format")
+                
+                if content[12:16] != b'fmt ':
+                    logger.error("Missing fmt chunk in WAV header")
+                    raise HTTPException(status_code=400, detail="Invalid WAV: Missing fmt chunk")
+                
+                # Extract format parameters
+                format_type = struct.unpack('<H', content[20:22])[0]
+                channels = struct.unpack('<H', content[22:24])[0]
+                sample_rate = struct.unpack('<I', content[24:28])[0]
+                byte_rate = struct.unpack('<I', content[28:32])[0]
+                block_align = struct.unpack('<H', content[32:34])[0]
+                bits_per_sample = struct.unpack('<H', content[34:36])[0]
+                
+                # Find data chunk
+                data_offset = None
+                data_size = None
+                for i in range(36, min(len(content) - 8, 200)):  # Search first 200 bytes for data chunk
+                    if content[i:i+4] == b'data':
+                        data_offset = i + 8  # Skip 'data' + size field
+                        data_size = struct.unpack('<I', content[i+4:i+8])[0]
+                        break
+                
+                if data_offset is None:
+                    logger.error("Missing data chunk in WAV file")
+                    raise HTTPException(status_code=400, detail="Invalid WAV: No data chunk found")
+                
+                # Log detailed WAV information
+                logger.info(f"WAV file details: format={format_type} ({format_type==1 and 'PCM' or 'Compressed'}), "
+                          f"channels={channels}, sample_rate={sample_rate}, bits={bits_per_sample}, "
+                          f"data_offset={data_offset}, data_size={data_size}")
+                
+                # Validate parameters
+                if format_type != 1 and format_type != 65534:  # PCM or extensible
+                    logger.warning(f"WAV format is not standard PCM: {format_type}")
+                    
+                if channels == 0 or sample_rate == 0 or bits_per_sample == 0:
+                    logger.error(f"Invalid WAV parameters: channels={channels}, "
+                               f"sample_rate={sample_rate}, bits_per_sample={bits_per_sample}")
+                    raise HTTPException(status_code=400, detail="Invalid WAV: Bad format parameters")
+                
+                # Verify that the reported data size makes sense
+                expected_file_size = data_offset + data_size
+                if data_size > len(content) or expected_file_size > len(content) + 100:  # Allow some padding
+                    logger.error(f"WAV data size inconsistent: reported={data_size}, "
+                               f"available={len(content)-data_offset}")
+                    # We'll still try to process it, but log the warning
+                    logger.warning("Proceeding with inconsistent WAV file")
+                
+                # For stereo files, log a warning (we'll try to process anyway)
+                if channels > 1:
+                    logger.warning(f"Multi-channel audio detected: {channels} channels. "
+                                 "Deepgram may require mono audio for best results.")
+                
+            except Exception as e:
+                logger.error(f"Error validating WAV file: {str(e)}")
+                # We'll still try to process it, but with a warning
+                logger.warning("Proceeding with potentially invalid WAV file")
+        
         # Save to a temporary file
         import tempfile
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
@@ -181,6 +261,7 @@ async def transcribe_audio(
                 logger.info(f"Setting PCM parameters: {audio_params}")
             
             # Transcribe file
+            logger.info(f"Sending file to transcription service: {temp_file.name}")
             transcripts = await transcription_service.transcribe_file(temp_file.name, audio_params)
             
             # Convert to response model
@@ -198,6 +279,8 @@ async def transcribe_audio(
                     )
                 )
             
+            # Log the results
+            logger.info(f"Transcription complete: {len(results)} segments returned")
             return results
         finally:
             # Clean up temporary file
@@ -206,6 +289,8 @@ async def transcribe_audio(
             
     except Exception as e:
         logger.error(f"Error transcribing audio: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
 
 
