@@ -77,6 +77,32 @@ async def root():
         "endpoints": {
             "POST /api/transcribe": "Transcribe an audio file",
             "WebSocket /api/stream": "Stream audio for real-time transcription",
+            "GET /api/status": "Check server status",
+        }
+    }
+
+
+@app.get("/api/status")
+async def server_status():
+    """Check if the server is running and return basic status information.
+    
+    This endpoint can be used by clients to verify connectivity to the server.
+    """
+    # Count active WebSocket connections
+    ws_connections = len(active_connections)
+    
+    # Get API key status (without revealing the key)
+    api_key = os.environ.get("DEEPGRAM_API_KEY", "")
+    api_key_configured = bool(api_key) and api_key != "your_deepgram_api_key_here"
+    
+    return {
+        "status": "online",
+        "timestamp": time.time(),
+        "connections": {
+            "websocket": ws_connections,
+        },
+        "services": {
+            "transcription": "available" if api_key_configured else "unavailable",
         }
     }
 
