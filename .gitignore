@@ -1,0 +1,71 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Deepgram API keys and sensitive data
+deepgram_credentials.json
+
+# Generated files
+truth_checker/generated/
+
+# Media files for testing only
+# Keep test assets in the repository
+# truth_checker/assets/
+
+# Output files
+transcripts/
+output/
+results/
+
+# Documentation build
+docs/_build/
+_docs_html/
+
+# Local development settings
+*.local.py
+local_settings.py
+
+# Temporary files
+tmp/
+temp/ 
